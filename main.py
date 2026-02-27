@@ -1,54 +1,71 @@
 import streamlit as st
+import os
 from anthropic import Anthropic
 
-st.title("Anthropic Streamlit App")
+# Page configuration
+st.set_page_config(page_title="Pharmacy Assistant", page_icon="💊")
 
-st.write("Hello! This is a simple Streamlit app using the Anthropic API.")
-
-# Add more functionality as needed
-import os
-import anthropic
-import streamlit as st
-
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+# Initialize Anthropic client
+# In a real app, this should be in secrets. 
+# For this demo, we check for ANTHROPIC_API_KEY env var.
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+client = Anthropic(api_key=api_key) if api_key else None
 
 st.title("💊 Pharmacy Prescription Assistant")
-st.write("Paste a prescription below and get an instant summary + WhatsApp draft reply.")
 
-prescription_input = st.text_area("Paste prescription text here:", height=200)
+if not api_key:
+    st.warning("Please set your ANTHROPIC_API_KEY in the Secrets tab to enable AI features.")
 
-if st.button("Analyse Prescription"):
-    if not prescription_input.strip():
-        st.warning("Please paste a prescription first.")
+# Sidebar for instructions/info
+with st.sidebar:
+    st.header("About")
+    st.info("This assistant helps extract medicine details, flags potential issues, and drafts patient-friendly instructions.")
+
+# Input area
+prescription_text = st.text_area(
+    "Paste Prescription Details Here:",
+    height=200,
+    placeholder="Patient: Ramesh Kumar, 45M..."
+)
+
+if st.button("Analyze Prescription") and prescription_text:
+    if not client:
+        st.error("API Key not found. Please add it to your environment variables.")
     else:
-        with st.spinner("Analysing..."):
-            message = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=1024,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"""You are an assistant for a retail pharmacy in Chennai, India.
-
-A patient has submitted the following prescription. Please:
-1. Extract each medicine with dosage and duration
-2. Flag any unclear or potentially risky items
-3. Draft a friendly WhatsApp reply to the patient confirming their order and any notes
+        with st.spinner("Analyzing prescription..."):
+            try:
+                # Construct the prompt
+                prompt = f"""You are a helpful pharmacy assistant. Analyze the following prescription and provide:
+1. **Medicine Details**: Extract name, dosage, frequency, and duration for each item.
+2. **Flag Issues**: Identify any missing information or potential concerns (e.g., missing duration, unclear instructions).
+3. **Patient Instructions**: Draft a friendly message to the patient explaining how to take their medications in simple terms.
 
 Prescription:
-{prescription_input}
+{prescription_text}
+"""
+                
+                message = client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=1000,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                
+                # Display results
+                st.markdown("### Analysis Results")
+                st.write(message.content[0].text)
+                
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
 
-Respond in this format:
-**Medicines Extracted:**
-[list each medicine, dosage, duration]
+# Sample data helper
+if st.checkbox("Show Sample Prescription"):
+    sample = """Patient: Ramesh Kumar, 45M
+Dr. Priya Sharma, Apollo Clinic
 
-**Flags / Notes:**
-[anything unclear, missing, or worth flagging for pharmacist review]
-
-**WhatsApp Draft Reply:**
-[friendly message to send to patient]"""
-                    }
-                ]
-            )
-
-        st.markdown(message.content[0].text)
+1. Metformin 500mg - twice daily after meals - 30 days
+2. Amlodipine 5mg - once daily morning - 30 days
+3. Pantop 40 - before breakfast - 15 days
+4. Vit D3 sachet - once weekly"""
+    st.code(sample)
